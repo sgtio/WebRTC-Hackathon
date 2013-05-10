@@ -1,0 +1,237 @@
+<html>
+<head>
+    <title>Lynckia Basic Example</title>
+    <script type="text/javascript" src="http://chotis2.dit.upm.es:3000/erizo.js"></script>
+    <script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+    <script type="text/javascript">
+        var localStream;
+        var misPuntos = 0;
+        var susPuntos = 0;
+        var tocado = false;
+        var timeout1 = null;
+        var timeout2 = null;
+        var disparo;
+
+        function getParameterByName(name) {
+          name = name.replace(/[\[]/, "\\\[").replace(/[\]]/, "\\\]");
+          var regexS = "[\\?&]" + name + "=([^&#]*)";
+          var regex = new RegExp(regexS);
+          var results = regex.exec(window.location.search);
+          if(results == null)
+            return "";
+          else
+            return decodeURIComponent(results[1].replace(/\+/g, " "));
+        }
+
+        $(function() {
+            disparo = document.getElementById("disparo");
+        });
+
+        window.onload = function () {
+            localStream = Erizo.Stream({audio: true, video: true, data: true});
+
+            var token = "eyJ0b2tlbklkIjoiNTBhZTM2NDc2OWMxNjYyMjI4MDAwMDY0IiwiaG9zdCI6ImNob3RpczIuZGl0LnVwbS5lczo4MDgwIiwic2lnbmF0dXJlIjoiTlRJNU9EZGpOelJrTUdVNU9EVmtORFkwWm1JNE1HTmtObVJoWkdWbE5XSmxaV1UyT1RZNVl3PT0ifQ==";
+
+            var room = Erizo.Room({token: token});
+
+            localStream.addEventListener("access-accepted", function () {
+                
+                var subscribeToStreams = function (streams) {
+                    for (var index in streams) {
+                        var stream = streams[index];
+                        if (localStream.getID() !== stream.getID()) {
+                            room.subscribe(stream);
+                        } 
+                    }
+                };
+
+                room.addEventListener("room-connected", function (roomEvent) {
+                    room.publish(localStream);
+                    subscribeToStreams(roomEvent.streams);
+                });
+
+                room.addEventListener("stream-subscribed", function(streamEvent) {
+                    var stream = streamEvent.stream;
+                    var div = document.createElement('div');
+                    div.setAttribute("class", "videoPlayer");
+                    div.setAttribute("id", "player" + stream.getID());
+
+                    $("#susPuntos").before(div);
+                    stream.show("player" + stream.getID());
+                    // setTimeout(function() {
+                    //     var tmp = $("#bar_"+stream.getID());
+                    //     tmp.parentNode.removeChild(tmp);
+                    // }, 2000);
+                    $("#player"+stream.getID()).on("click", function(e) {
+                        capturaFrame(e, stream);
+                    });
+
+                    /************* EVENTO DATA ************************/
+                    /**************************************************/
+                    stream.addEventListener("stream-data", function(e) {
+                        susPuntos = e.msg.susPuntos;
+                        var hit = e.msg.hit;
+                        $("#susPuntos").val(susPuntos);
+                        if (susPuntos == -10) {
+                            alert("HAS GANADO!!");
+                            misPuntos = 0;
+                            susPuntos = 0;
+                            $("#misPuntos").val(misPuntos);
+                            $("#susPuntos").val(susPuntos);
+                        }
+                        if (susPuntos == 10) {
+                            alert("HAS PERDIDO!!");
+                            misPuntos = 0;
+                            susPuntos = 0;
+                            $("#misPuntos").val(misPuntos);
+                            $("#susPuntos").val(susPuntos);
+                        }
+                        if (hit) {
+                            $("#player1").append('<img src="bam.png" alt="HIT" class="onm" />');
+                            if (tocado) {
+                                clearTimeout(timeout1);
+                            }
+                            timeout1 = setTimeout(ocultaOnm, 1000);
+                        }
+                    });
+                });
+
+                room.addEventListener("stream-added", function (streamEvent) {
+                    var streams = [];
+                    streams.push(streamEvent.stream);
+                    subscribeToStreams(streams);
+                });
+
+                room.addEventListener("stream-removed", function (streamEvent) {
+                    // Remove stream from DOM
+                    var stream = streamEvent.stream;
+                    if (stream.elementID !== undefined) {
+                        var element = document.getElementById(stream.elementID);
+                        document.body.removeChild(element);
+                    }
+                });
+
+                room.connect();
+    		    console.log(document.getElementById("myVideo"));
+                localStream.show("myVideo");
+                // var tmp = $("#bar_undefined");
+                // tmp.parentElement.removeChild(tmp);
+
+            });
+            localStream.init();
+            $("#misPuntos").val(misPuntos);
+            $("#susPuntos").val(susPuntos);
+        }
+        function capturaFrame(e, stream) {
+            var mx = e.offsetX; // Posición X del mouse
+            var my = e.offsetY; // Posición Y del mouse
+            var hit = false;
+
+            var img = stream.getVideoFrame(); // Capturamos el frame
+
+            var c = document.getElementById("fotograma");
+            var ctx = c.getContext("2d");
+            ctx.putImageData(img, 0, 0); //  Guardamos el frame en el canvas
+            
+            var colores = ctx.getImageData(mx-1, my-1, 2, 2);
+            if (colores.data[1] > 180 && colores.data[2] < 120) {
+                console.log("X: "+mx+" Y:"+my);
+                console.log("DETECTADO! VALOR: R"+colores.data[0]+" G"+colores.data[1]+" B"+colores.data[2]+" A"+colores.data[3]);
+                misPuntos++;
+                hit = true;
+            }
+            else {
+                console.log("X: "+mx+" Y:"+my);
+                console.log("NO DETECTADO! VALOR: R"+colores.data[0]+" G"+colores.data[1]+" B"+colores.data[2]+" A"+colores.data[3]);
+                misPuntos--;
+                $("#player1").append('<img src="argh.gif" alt="ARGH" class="onm" />');
+                clearTimeout(timeout2);
+                timeout2 = setTimeout(ocultaOnm, 1000);
+            }
+            $("#misPuntos").val(misPuntos);
+            localStream.sendData({"susPuntos":misPuntos, "hit":hit});
+            if (misPuntos == 10) {
+                alert("HAS GANADO!!");
+                misPuntos = 0;
+                susPuntos = 0;
+                $("#misPuntos").val(misPuntos);
+                $("#susPuntos").val(susPuntos);
+            }
+            if (misPuntos == -10) {
+                alert("HAS PERDIDO!!");
+                misPuntos = 0;
+                susPuntos = 0;
+                $("#misPuntos").val(misPuntos);
+                $("#susPuntos").val(susPuntos);
+            }
+            disparo.play();
+        }
+        function ocultaOnm() {
+            $("#player1 .onm").remove();
+        }
+    </script>
+    <style type="text/css">
+    #contenedor {
+        width: 810px;
+        margin: 0 auto;
+    }
+    h1 {
+        color: #ff0000;
+        text-align: center;
+    }
+    .videoPlayer {
+        width: 320px;
+        height: 240px;
+        border: 5px solid #000000;
+    }
+    #fotograma {
+        width: 320px;
+        height: 240px;
+        display: none;
+    }
+    #imgFotograma {
+        width: 320px;
+        height: 240px;
+    }
+    .cajaPlayer {
+        text-align: center;
+        float: left;
+        border: 5px solid #ff0000;
+    }
+    .cajaPlayer input {
+        border: 4px solid #000000;
+        text-align: center;
+        font-weight: bold;
+        font-size: 18px;
+    }
+    #imgVS {
+        width: 100px;
+        float: left;
+        margin-top: 100px;
+    }
+    .onm {
+        position: absolute;
+        max-width: 400px;
+        max-height: 300px;
+        left: 0px;
+        top: 30px;
+    }
+    </style>
+</head>
+<body>
+    <div id="contenedor">
+        <h1>HEADSHOT</h1>
+        <div id="player1" class="cajaPlayer">
+            <div id="myVideo" class="videoPlayer"></div>
+            <input type="text" value="" id="misPuntos" />
+        </div>
+        <img src="versus.png" alt="Versus" id="imgVS" />
+        <div id="player2" class="cajaPlayer">
+            <input type="text" value="" id="susPuntos" />
+        </div>
+        <br clear="left" />
+    </div>
+    <canvas id="fotograma"></canvas>
+    <audio id="disparo"><source src="disparo.mp3" type="audio/mp3"></audio>
+</body>
+</html>
